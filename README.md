@@ -1,69 +1,86 @@
-# Project Blueprint Framework
+# OAuth2.0 — Overview
 
-> AI 에이전트(Claude Code 등)가 프로젝트를 **정확하고 일관되게** 이해하고 수정할 수 있도록 설계된 문서 구조 표준입니다.
-
----
-
-## 왜 이 프레임워크가 필요한가?
-
-AI 에이전트는 단일 파일 수준에서는 탁월한 성능을 보이지만,  
-**프로젝트 전체 맥락(Context)** 을 유지하면서 작업할 때 다음 문제가 발생합니다:
-
-- 데이터 흐름을 오해해 의도치 않은 사이드 이펙트 발생
-- 이미 구현된 기능을 중복 구현하거나 미구현 기능을 건너뜀
-- 폴더별 아키텍처 원칙(Pure Function, 의존성 제한 등)을 무시
-
-Blueprint Framework는 **각 폴더의 `README.md`를 에이전트의 컨텍스트 문서로 활용**합니다.  
-에이전트가 작업 전 이 문서를 읽도록 강제함으로써 위 문제를 구조적으로 차단합니다.
-
-### 세 가지 핵심 장치
-
-| 장치 | 역할 |
-|------|------|
-| **DFD (Data Flow Diagram)** | 데이터 흐름을 시각화하여 에이전트가 흐름을 깨는 코드 작성 방지 |
-| **Progress Tracker** | 기능 구현 현황을 테이블로 관리, 에이전트가 직접 업데이트 |
-| **Agent Control** | 폴더별 행동 제약을 명시하여 에이전트의 System Prompt 역할 수행 |
+OAuth2.0 인증 서버 및 클라이언트 구현 프로젝트입니다.  
+Authorization Code Flow, Token 발급/갱신/폐기, 외부 OAuth Provider 연동을 담당합니다.  
+이 레포지토리는 [Blueprint Framework](./BLUEPRINT.md)를 따르며, 에이전트는 작업 전 반드시 이 문서를 읽어야 합니다.
 
 ---
 
-## 레포지토리 구조
+## DFD (Data Flow Diagram)
 
-```
-project-blueprint-framework/
-├── README.md                   # 이 파일 (프레임워크 소개)
-├── BLUEPRINT.md                # 마스터 문서 (프레임워크 전체 명세)
-├── CONTRIBUTING.md             # 에이전트 행동 강령
-└── templates/
-    ├── README_TEMPLATE.md      # 폴더별 README 템플릿
-    └── FOLDER_CHECKLIST.md     # 새 폴더 생성 시 체크리스트
+```mermaid
+flowchart LR
+    Client([Client App]) -->|Authorization Request| AuthServer[Auth Server]
+    AuthServer -->|Login Page| User([User])
+    User -->|Credentials| AuthServer
+    AuthServer -->|Authorization Code| Client
+    Client -->|Code + Client Secret| TokenEndpoint[Token Endpoint]
+    TokenEndpoint -->|Verify| UserDB[(User DB)]
+    UserDB -->|User Record| TokenEndpoint
+    TokenEndpoint -->|Access Token + Refresh Token| Client
+    Client -->|Access Token| ResourceServer[Resource Server]
+    ResourceServer -->|Validate| TokenEndpoint
+    TokenEndpoint -->|Valid / Invalid| ResourceServer
+    ResourceServer -->|Protected Resource| Client
 ```
 
 ---
 
-## 빠른 시작
+## Tech Stack
 
-### 1. 새 프로젝트에 적용
-
-이 레포지토리의 파일들을 프로젝트 루트에 복사한 뒤,  
-Claude Code 첫 세션에 아래 프롬프트를 입력하세요:
-
-```
-이 프로젝트는 Blueprint Framework를 따릅니다.
-새로운 폴더를 생성할 때마다 templates/README_TEMPLATE.md에 맞춰
-README.md를 생성하고, 현재 내가 요청한 작업의 맥락에 맞게 DFD와 Progress Tracker를 작성해.
-```
-
-### 2. 각 폴더마다 README 생성
-
-`templates/README_TEMPLATE.md`를 복사해 각 모듈/폴더의 `README.md`로 사용하세요.  
-섹션별 작성 가이드는 `BLUEPRINT.md`를 참고하세요.
+- 미정 (구현 시 이 섹션을 업데이트할 것)
 
 ---
 
-## 핵심 원칙
+## Agent Control
 
-1. **에이전트는 작업 전 반드시 해당 폴더의 `README.md`를 읽는다**
-2. **작업 완료 후 반드시 `Progress Tracker`를 업데이트한다**
-3. **구조 변경 시 반드시 `DFD`를 최신 상태로 유지한다**
+> 이 섹션의 규칙은 에이전트가 이 레포지토리의 코드를 수정할 때 **반드시** 따라야 합니다.
 
-자세한 규칙은 [CONTRIBUTING.md](./CONTRIBUTING.md) 및 [BLUEPRINT.md](./BLUEPRINT.md)를 참고하세요.
+### 허용 (Allow)
+
+- 각 폴더의 `README.md` 작성 및 업데이트
+- `templates/README_TEMPLATE.md` 기반 신규 폴더 README 생성
+- Progress Tracker 상태 업데이트
+
+### 금지 (Prohibit)
+
+- 시크릿/키/토큰 값을 코드에 하드코딩 (반드시 환경변수 사용)
+- `.env` 파일 또는 인증서 파일을 git에 커밋
+- 폴더 README.md 미확인 상태에서 코드 수정 시작
+- 테스트 없이 `✅ Done` 마킹
+
+### 필수 (Required)
+
+- 새 폴더 생성 시 `templates/README_TEMPLATE.md` 기반 README.md 생성
+- 작업 시작 시 Progress Tracker를 `🔄 In Progress`로 변경
+- 작업 완료 시 Progress Tracker를 `✅ Done` + 날짜로 업데이트
+- 구조 변경 시 위 DFD 업데이트
+- 커밋 메시지는 `CONTRIBUTING.md`의 규칙 준수
+
+---
+
+## Progress Tracker
+
+| Feature | Status | Assignee | Last Updated | Notes |
+|---------|--------|----------|--------------|-------|
+| .gitignore 설정 | ✅ Done | Agent | 2026-05-18 | 시크릿/키/환경변수 파일 필터링 |
+| 프로젝트 루트 README Blueprint 적용 | ✅ Done | Agent | 2026-05-18 | |
+| 기술 스택 확정 | ⏳ Pending | - | - | |
+| Authorization Server 구현 | ⏳ Pending | - | - | |
+| Token Endpoint 구현 | ⏳ Pending | - | - | |
+| Resource Server 미들웨어 구현 | ⏳ Pending | - | - | |
+| 외부 OAuth Provider 연동 (Google 등) | ⏳ Pending | - | - | |
+| Refresh Token 갱신/폐기 | ⏳ Pending | - | - | |
+
+---
+
+## Next Roadmap
+
+1. 기술 스택 확정 (언어, 프레임워크, DB) 및 README Tech Stack 업데이트
+2. 프로젝트 폴더 구조 설계 및 각 폴더 README.md 생성
+3. Authorization Server 기본 구현 시작
+
+---
+
+> 에이전트 행동 규칙 전문: [CONTRIBUTING.md](./CONTRIBUTING.md)  
+> 프레임워크 명세 전문: [BLUEPRINT.md](./BLUEPRINT.md)
