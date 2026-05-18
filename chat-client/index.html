@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>Chat — 로그인</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Google Identity Services SDK -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+  <div class="auth-container">
+    <h1>💬 Chat</h1>
+
+    <!-- 이메일 로그인 폼 -->
+    <div class="form-group">
+      <input type="email" id="email" placeholder="이메일" />
+      <input type="password" id="password" placeholder="비밀번호" />
+      <button id="login-btn">로그인</button>
+      <button id="register-btn">회원가입</button>
+    </div>
+
+    <div class="divider">또는</div>
+
+    <!-- Google 로그인 버튼 (SDK가 자동 렌더링) -->
+    <div id="google-btn"></div>
+
+    <p id="error-msg" class="error"></p>
+  </div>
+
+  <script type="module">
+    import { emailLogin } from './js/auth.js';
+    import { initGoogle } from './js/auth.js';
+    import { getToken } from './js/api.js';
+    import { CONFIG } from './js/config.js';
+
+    // 이미 로그인된 경우 바로 이동
+    if (getToken()) window.location.href = '/chat.html';
+
+    // Google 초기화 — 본인 클라이언트 ID 입력
+    const GOOGLE_CLIENT_ID = CONFIG.GOOGLE_CLIENT_ID;
+    window.addEventListener('load', () => initGoogle(GOOGLE_CLIENT_ID));
+
+    // 이메일 로그인
+    document.getElementById('login-btn').addEventListener('click', async () => {
+      const email    = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+      try {
+        await emailLogin(email, password);
+        window.location.href = '/chat.html';
+      } catch (e) {
+        document.getElementById('error-msg').textContent = e.message;
+      }
+    });
+
+    // 회원가입
+    document.getElementById('register-btn').addEventListener('click', async () => {
+      const email    = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+      const name     = prompt('이름을 입력하세요');
+      try {
+        const res = await fetch('http://localhost:3000/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password, name }),
+        });
+        if (!res.ok) throw new Error('회원가입 실패');
+        alert('회원가입 완료! 로그인해주세요.');
+      } catch (e) {
+        document.getElementById('error-msg').textContent = e.message;
+      }
+    });
+  </script>
+</body>
+</html>
