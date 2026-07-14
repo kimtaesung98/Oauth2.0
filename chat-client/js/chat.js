@@ -2,59 +2,73 @@
 import { apiFetch, getToken, getUser } from './api.js';
 
 let ws = null;
-let currentPartner = null;
+let currentPartnerId = null;
 
 // ─────────────────────────────────────────
 // WebSocket 연결
 // ─────────────────────────────────────────
-export function connectWS(onMessage) {
+export function connectWS(onMessage, onOnlineUpdate) {
     const token = getToken();
+    if (!token) return;
+
     ws = new WebSocket(`ws://localhost:3000/ws?token=${token}`);
 
     ws.onopen = () => console.log('WebSocket 연결됨');
 
     ws.onmessage = (e) => {
         const data = JSON.parse(e.data);
-
-        // 온라인 상태 업데이트
         if (data.type === 'online_users') {
-            updateOnlineStatus(data.onlineUsers);
+            onOnlineUpdate(data.onlineUsers);
             return;
         }
-        // 메시지 수신
         onMessage(data);
     };
 
-    ws.onclose = () => console.log('WebSocket 연결 끊김');
+    ws.onclose = () => {
+        console.log('WebSocket 연결 끊김 — 3초 후 재연결');
+        setTimeout(() => connectWS(onMessage, onOnlineUpdate), 3000);
+    };
+
+    ws.onerror = (e) => console.error('WebSocket 에러:', e);
 }
 
 // ─────────────────────────────────────────
 // 메시지 전송
 // ─────────────────────────────────────────
 export function sendMessage(receiverId, content) {
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        console.error('WebSocket 연결 안 됨');
+        return false;
+    }
     ws.send(JSON.stringify({ receiverId, content }));
+    return true;
 }
 
 // ─────────────────────────────────────────
-// 채팅 목록 불러오기
+// API 호출
 // ─────────────────────────────────────────
-export async function loadChatList() {
-    return await apiFetch('/chats');
-}
+export const loadChatList  = () => apiFetch('/chats');
+export const loadMessages  = (partnerId) => apiFetch(`/messages/${partnerId}`);
+export const markAsRead    = (senderId) => apiFetch('/messages/read', {
+    method: 'PATCH',
+    body: JSON.stringify({ senderId }),
+});
 
 // ─────────────────────────────────────────
-// 메시지 내역 불러오기
+// 현재 열린 채팅 파트너 ID
 // ─────────────────────────────────────────
-export async function loadMessages(partnerId) {
-    return await apiFetch(`/messages/${partnerId}`);
-}
+export const getCurrentPartnerId = () => currentPartnerId;
+export const setCurrentPartnerId = (id) => { currentPartnerId = id; };
 
-// 온라인 상태 UI 업데이트
-function updateOnlineStatus(onlineIds) {
-    document.querySelectorAll('.user-item').forEach(el => {
-        const uid = Number(el.dataset.uid);
-        const dot = el.querySelector('.dot');
-        if (dot) dot.className = `dot ${onlineIds.includes(uid) ? 'online' : 'offline'}`;
-    });
+// ─────────────────────────────────────────
+// 시간 포맷
+// ─────────────────────────────────────────
+export function formatTime(dateStr) {
+    const d = new Date(dateStr);
+    const now = new Date();
+    const isToday = d.toDateString() === now.toDateString();
+    if (isToday) {
+        return d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+    }
+    return d.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' });
 }

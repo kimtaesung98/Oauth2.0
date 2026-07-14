@@ -2,79 +2,148 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Chat — 로그인</title>
   <link rel="stylesheet" href="style.css">
-  <!-- Google Identity Services SDK -->
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
   <div class="auth-container">
     <h1>💬 Chat</h1>
+    <p class="subtitle">실시간 1:1 채팅 서비스</p>
 
-    <!-- 이메일 로그인 폼 -->
-    <div class="form-group">
-      <input type="email" id="email" placeholder="이메일" />
-      <input type="password" id="password" placeholder="비밀번호" />
-      <button id="login-btn">로그인</button>
-      <button id="register-btn">회원가입</button>
+    <!-- 탭 -->
+    <div class="tab-group">
+      <button class="tab active" data-tab="login">로그인</button>
+      <button class="tab" data-tab="register">회원가입</button>
     </div>
+
+    <!-- 로그인 폼 -->
+    <div class="form-group" id="login-form">
+      <input type="email" id="login-email" placeholder="이메일" autocomplete="email"/>
+      <input type="password" id="login-password" placeholder="비밀번호" autocomplete="current-password"/>
+      <button id="login-btn" class="btn-primary">로그인</button>
+    </div>
+
+    <!-- 회원가입 폼 -->
+    <div class="form-group hidden" id="register-form">
+      <input type="text"  id="reg-name"     placeholder="이름" />
+      <input type="email" id="reg-email"    placeholder="이메일" autocomplete="email"/>
+      <input type="password" id="reg-password" placeholder="비밀번호 (6자 이상)" autocomplete="new-password"/>
+      <input type="password" id="reg-confirm"  placeholder="비밀번호 확인" />
+      <button id="register-btn" class="btn-primary">회원가입</button>
+    </div>
+
+    <p id="error-msg" class="error"></p>
+    <p id="success-msg" class="success"></p>
 
     <div class="divider">또는</div>
 
-    <!-- Google 로그인 버튼 (SDK가 자동 렌더링) -->
+    <!-- Google 로그인 (방식 1 — SDK) -->
     <div id="google-btn"></div>
 
-    <div class="divider">또는 (서버 방식)</div>
-    <a href="http://localhost:3000/auth/google/login" style="width:100%">
-      <button style="width:100%; padding:10px; border:1px solid #ddd;
-          border-radius:8px; background:#fff; cursor:pointer;">
-        🔐 Google 로그인 (서버 방식)
-      </button>
+    <!-- Google 로그인 (방식 2 — 서버 방식) -->
+    <a href="http://localhost:3000/auth/google/login" class="btn-google-server">
+      🔐 Google 로그인 (서버 방식)
     </a>
-
-    <p id="error-msg" class="error"></p>
   </div>
 
   <script type="module">
     import { emailLogin } from './js/auth.js';
-    import { initGoogle } from './js/auth.js';
-    import { getToken } from './js/api.js';
+    import { initGoogle  } from './js/auth.js';
+    import { getToken, setToken } from './js/api.js';
     import { CONFIG } from './js/config.js';
 
-    // 이미 로그인된 경우 바로 이동
+    // URL 토큰 파싱 (방식 2 OAuth 콜백)
+    const urlParams = new URLSearchParams(window.location.search);
+    const tokenFromUrl = urlParams.get('token');
+    if (tokenFromUrl) {
+        setToken(tokenFromUrl);
+        window.history.replaceState({}, '', '/index.html');
+    }
+
+    // 이미 로그인된 경우
     if (getToken()) window.location.href = '/chat.html';
 
-    // Google 초기화 — 본인 클라이언트 ID 입력
-    const GOOGLE_CLIENT_ID = CONFIG.GOOGLE_CLIENT_ID;
-    window.addEventListener('load', () => initGoogle(GOOGLE_CLIENT_ID));
+    // Google 초기화
+    window.addEventListener('load', () => initGoogle(CONFIG.GOOGLE_CLIENT_ID));
 
-    // 이메일 로그인
+    // 탭 전환
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        const target = tab.dataset.tab;
+        document.getElementById('login-form').classList.toggle('hidden', target !== 'login');
+        document.getElementById('register-form').classList.toggle('hidden', target !== 'register');
+        clearMessages();
+      });
+    });
+
+    // 에러/성공 메시지
+    const showError   = (msg) => { document.getElementById('error-msg').textContent = msg; };
+    const showSuccess = (msg) => { document.getElementById('success-msg').textContent = msg; };
+    const clearMessages = () => {
+      document.getElementById('error-msg').textContent = '';
+      document.getElementById('success-msg').textContent = '';
+    };
+
+    // 로그인
     document.getElementById('login-btn').addEventListener('click', async () => {
-      const email    = document.getElementById('email').value;
-      const password = document.getElementById('password').value;
+      clearMessages();
+      const email    = document.getElementById('login-email').value.trim();
+      const password = document.getElementById('login-password').value;
+
+      if (!email || !password) { showError('이메일과 비밀번호를 입력하세요'); return; }
+
       try {
+        document.getElementById('login-btn').textContent = '로그인 중...';
         await emailLogin(email, password);
         window.location.href = '/chat.html';
       } catch (e) {
-        document.getElementById('error-msg').textContent = e.message;
+        showError(e.message);
+        document.getElementById('login-btn').textContent = '로그인';
       }
     });
 
     // 회원가입
     document.getElementById('register-btn').addEventListener('click', async () => {
-      const email    = document.getElementById('email').value;
-      const password = document.getElementById('password').value;
-      const name     = prompt('이름을 입력하세요');
+      clearMessages();
+      const name     = document.getElementById('reg-name').value.trim();
+      const email    = document.getElementById('reg-email').value.trim();
+      const password = document.getElementById('reg-password').value;
+      const confirm  = document.getElementById('reg-confirm').value;
+
+      if (!name || !email || !password) { showError('모든 항목을 입력하세요'); return; }
+      if (password.length < 6) { showError('비밀번호는 6자 이상이어야 합니다'); return; }
+      if (password !== confirm) { showError('비밀번호가 일치하지 않습니다'); return; }
+
       try {
+        document.getElementById('register-btn').textContent = '가입 중...';
         const res = await fetch('http://localhost:3000/auth/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, password, name }),
         });
-        if (!res.ok) throw new Error('회원가입 실패');
-        alert('회원가입 완료! 로그인해주세요.');
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || '회원가입 실패');
+        showSuccess('회원가입 완료! 로그인해주세요.');
+        document.querySelector('[data-tab="login"]').click();
       } catch (e) {
-        document.getElementById('error-msg').textContent = e.message;
+        showError(e.message);
+      } finally {
+        document.getElementById('register-btn').textContent = '회원가입';
+      }
+    });
+
+    // 엔터키
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      const loginForm = document.getElementById('login-form');
+      if (!loginForm.classList.contains('hidden')) {
+        document.getElementById('login-btn').click();
+      } else {
+        document.getElementById('register-btn').click();
       }
     });
   </script>

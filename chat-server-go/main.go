@@ -39,9 +39,11 @@ func main() {
 	// 인증 라우트 그룹
 	auth := r.Group("/auth")
 	{
-		auth.POST("/register", handler.Register)
-		auth.POST("/login", handler.Login)
-		auth.POST("/google", handler.GoogleLogin)
+		auth.POST("/register",       handler.Register)
+		auth.POST("/login",          handler.Login)
+		auth.POST("/google",         handler.GoogleLogin)        // 방식 1 기존
+		auth.GET("/google/login",    handler.GoogleOAuthLogin)   // 방식 2 ← 추가
+		auth.GET("/google/callback", handler.GoogleOAuthCallback) // 방식 2 ← 추가
 	}
 
 	// JWT 미들웨어 적용 라우트

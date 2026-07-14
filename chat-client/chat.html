@@ -2,25 +2,50 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Chat</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div class="chat-container">
 
-    <!-- 사이드바: 채팅 목록 -->
+    <!-- 사이드바 -->
     <aside class="sidebar">
       <div class="sidebar-header">
-        <span id="my-name"></span>
-        <button id="logout-btn">로그아웃</button>
+        <div class="my-info">
+          <span class="dot online"></span>
+          <strong id="my-name"></strong>
+        </div>
+        <button id="logout-btn" class="btn-logout">로그아웃</button>
       </div>
-      <ul id="chat-list"></ul>
+
+      <!-- 유저 검색 -->
+      <div class="search-box">
+        <input type="text" id="search-input" placeholder="🔍 유저 검색..." />
+      </div>
+
+      <!-- 검색 결과 -->
+      <ul id="search-result" class="user-list hidden"></ul>
+
+      <!-- 채팅 목록 -->
+      <div class="section-title">채팅 목록</div>
+      <ul id="chat-list" class="user-list"></ul>
     </aside>
 
-    <!-- 메인: 메시지 영역 -->
+    <!-- 메인 채팅 영역 -->
     <main class="chat-main">
-      <div class="chat-header" id="chat-header">대화 상대를 선택하세요</div>
-      <div class="messages" id="messages"></div>
+      <!-- 헤더 -->
+      <div class="chat-header" id="chat-header">
+        <span id="partner-name">대화 상대를 선택하세요</span>
+        <span class="dot offline" id="partner-status"></span>
+      </div>
+
+      <!-- 메시지 영역 -->
+      <div class="messages" id="messages">
+        <div class="empty-state">💬 대화를 시작해보세요</div>
+      </div>
+
+      <!-- 입력창 -->
       <div class="input-area">
         <input type="text" id="msg-input" placeholder="메시지 입력..." disabled />
         <button id="send-btn" disabled>전송</button>
@@ -30,91 +55,227 @@
   </div>
 
   <script type="module">
-    import { connectWS, sendMessage, loadChatList, loadMessages } from './js/chat.js';
-    import { getToken, getUser, clearAuth, setToken } from './js/api.js';
+    import {
+      connectWS, sendMessage, loadChatList, loadMessages,
+      markAsRead, formatTime, getCurrentPartnerId, setCurrentPartnerId
+    } from './js/chat.js';
+    import { getToken, getUser, clearAuth, searchUsers } from './js/api.js';
 
+    // URL 토큰 파싱 (OAuth 방식 2 콜백)
     const urlParams = new URLSearchParams(window.location.search);
     const tokenFromUrl = urlParams.get('token');
     if (tokenFromUrl) {
-      setToken(tokenFromUrl);
-      window.history.replaceState({}, '', '/chat.html');
+        const { setToken } = await import('./js/api.js');
+        setToken(tokenFromUrl);
+        window.history.replaceState({}, '', '/chat.html');
     }
 
-    // 비로그인 → 로그인 화면으로
+    // 비로그인 → 이동
     if (!getToken()) window.location.href = '/index.html';
 
     const me = getUser();
     document.getElementById('my-name').textContent = me?.name || '';
 
+    // ─────────────────────────────────────────
     // WebSocket 연결
-    connectWS((msg) => {
-      // 현재 열린 대화창의 메시지만 렌더링
-      if (msg.senderId === currentPartnerId || msg.receiverId === currentPartnerId) {
-        appendMessage(msg);
+    // ─────────────────────────────────────────
+    connectWS(
+      // 메시지 수신
+      (msg) => {
+        const partnerId = getCurrentPartnerId();
+        if (msg.senderId === partnerId || msg.receiverId === partnerId) {
+          appendMessage(msg);
+          if (msg.senderId === partnerId) markAsRead(partnerId);
+        }
+        // 채팅 목록 갱신
+        renderChatList();
+      },
+      // 온라인 상태 업데이트
+      (onlineIds) => {
+        document.querySelectorAll('.user-item').forEach(el => {
+          const uid = Number(el.dataset.uid);
+          const dot = el.querySelector('.dot');
+          if (dot) dot.className = `dot ${onlineIds.includes(uid) ? 'online' : 'offline'}`;
+        });
+        // 현재 대화 상대 온라인 상태
+        const partnerId = getCurrentPartnerId();
+        if (partnerId) {
+          const partnerDot = document.getElementById('partner-status');
+          if (partnerDot) {
+            partnerDot.className = `dot ${onlineIds.includes(partnerId) ? 'online' : 'offline'}`;
+          }
+        }
       }
-    });
+    );
 
-    // 채팅 목록 로드
-    let currentPartnerId = null;
-
+    // ─────────────────────────────────────────
+    // 채팅 목록
+    // ─────────────────────────────────────────
     async function renderChatList() {
-      const chats = await loadChatList();
+      const chats = await loadChatList().catch(() => []);
       const list  = document.getElementById('chat-list');
       list.innerHTML = '';
+
+      if (chats.length === 0) {
+        list.innerHTML = '<li class="empty-item">채팅 내역이 없습니다</li>';
+        return;
+      }
+
       chats.forEach(chat => {
         const li = document.createElement('li');
         li.className = 'user-item';
         li.dataset.uid = chat.partnerId;
         li.innerHTML = `
           <span class="dot offline"></span>
-          <div>
+          <div class="user-info">
             <strong>${chat.partnerName}</strong>
-            <p>${chat.lastMessage}</p>
+            <p class="last-msg">${chat.lastMessage || '메시지 없음'}</p>
           </div>
-          ${chat.unreadCount > 0 ? `<span class="badge">${chat.unreadCount}</span>` : ''}
+          ${chat.unreadCount > 0
+            ? `<span class="badge">${chat.unreadCount}</span>`
+            : ''}
         `;
         li.addEventListener('click', () => openChat(chat.partnerId, chat.partnerName));
         list.appendChild(li);
       });
     }
 
+    // ─────────────────────────────────────────
+    // 유저 검색
+    // ─────────────────────────────────────────
+    let searchTimer = null;
+    document.getElementById('search-input').addEventListener('input', (e) => {
+      clearTimeout(searchTimer);
+      const keyword = e.target.value.trim();
+
+      if (!keyword) {
+        document.getElementById('search-result').classList.add('hidden');
+        return;
+      }
+
+      searchTimer = setTimeout(async () => {
+        const users = await searchUsers(keyword).catch(() => []);
+        const result = document.getElementById('search-result');
+        result.innerHTML = '';
+        result.classList.remove('hidden');
+
+        if (users.length === 0) {
+          result.innerHTML = '<li class="empty-item">검색 결과 없음</li>';
+          return;
+        }
+
+        users.forEach(user => {
+          const li = document.createElement('li');
+          li.className = 'user-item';
+          li.dataset.uid = user.id;
+          li.innerHTML = `
+            <span class="dot offline"></span>
+            <div class="user-info">
+              <strong>${user.name}</strong>
+              <p class="last-msg">${user.email}</p>
+            </div>
+            <button class="btn-chat">채팅</button>
+          `;
+          li.querySelector('.btn-chat').addEventListener('click', () => {
+            openChat(user.id, user.name);
+            document.getElementById('search-input').value = '';
+            result.classList.add('hidden');
+          });
+          result.appendChild(li);
+        });
+      }, 300);
+    });
+
+    // ─────────────────────────────────────────
     // 채팅 열기
+    // ─────────────────────────────────────────
     async function openChat(partnerId, partnerName) {
-      currentPartnerId = partnerId;
-      document.getElementById('chat-header').textContent = partnerName;
+      setCurrentPartnerId(partnerId);
+      document.getElementById('partner-name').textContent = partnerName;
       document.getElementById('msg-input').disabled  = false;
       document.getElementById('send-btn').disabled   = false;
+      document.getElementById('msg-input').focus();
 
-      const messages = await loadMessages(partnerId);
+      // 읽음 처리
+      await markAsRead(partnerId).catch(() => {});
+
+      // 메시지 로드
+      const messages = await loadMessages(partnerId).catch(() => []);
       const box = document.getElementById('messages');
       box.innerHTML = '';
-      messages.forEach(appendMessage);
+
+      if (messages.length === 0) {
+        box.innerHTML = '<div class="empty-state">첫 메시지를 보내보세요 👋</div>';
+      } else {
+        messages.forEach(appendMessage);
+      }
+
       box.scrollTop = box.scrollHeight;
+
+      // 채팅 목록 갱신 (읽음 처리 반영)
+      renderChatList();
     }
 
+    // ─────────────────────────────────────────
     // 메시지 렌더링
+    // ─────────────────────────────────────────
     function appendMessage(msg) {
       const box  = document.getElementById('messages');
-      const div  = document.createElement('div');
+
+      // 빈 상태 제거
+      const empty = box.querySelector('.empty-state');
+      if (empty) empty.remove();
+
       const isMe = msg.senderId === me?.id;
+      const div  = document.createElement('div');
       div.className = `message ${isMe ? 'mine' : 'theirs'}`;
-      div.textContent = msg.content;
+      div.innerHTML = `
+        <div class="bubble">${escapeHtml(msg.content)}</div>
+        <div class="msg-time">${formatTime(msg.createdAt)}</div>
+        ${isMe && msg.isRead ? '<div class="read-mark">읽음</div>' : ''}
+      `;
       box.appendChild(div);
       box.scrollTop = box.scrollHeight;
     }
 
+    // XSS 방지
+    function escapeHtml(str) {
+      return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    // ─────────────────────────────────────────
     // 메시지 전송
+    // ─────────────────────────────────────────
     document.getElementById('send-btn').addEventListener('click', () => {
-      const input = document.getElementById('msg-input');
-      const text  = input.value.trim();
-      if (!text || !currentPartnerId) return;
-      sendMessage(currentPartnerId, text);
-      input.value = '';
+      const input     = document.getElementById('msg-input');
+      const text      = input.value.trim();
+      const partnerId = getCurrentPartnerId();
+      if (!text || !partnerId) return;
+
+      const sent = sendMessage(partnerId, text);
+      if (sent) {
+        // 내가 보낸 메시지 즉시 렌더링
+        appendMessage({
+          content:    text,
+          senderId:   me?.id,
+          receiverId: partnerId,
+          isRead:     false,
+          createdAt:  new Date().toISOString(),
+        });
+        input.value = '';
+      }
     });
 
     // 엔터키 전송
     document.getElementById('msg-input').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') document.getElementById('send-btn').click();
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        document.getElementById('send-btn').click();
+      }
     });
 
     // 로그아웃
@@ -123,6 +284,7 @@
       window.location.href = '/index.html';
     });
 
+    // 초기 로드
     renderChatList();
   </script>
 </body>
