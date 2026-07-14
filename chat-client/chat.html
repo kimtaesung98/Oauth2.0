@@ -31,7 +31,14 @@
 
   <script type="module">
     import { connectWS, sendMessage, loadChatList, loadMessages } from './js/chat.js';
-    import { getToken, getUser, clearAuth } from './js/api.js';
+    import { getToken, getUser, clearAuth, setToken } from './js/api.js';
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const tokenFromUrl = urlParams.get('token');
+    if (tokenFromUrl) {
+      setToken(tokenFromUrl);
+      window.history.replaceState({}, '', '/chat.html');
+    }
 
     // 비로그인 → 로그인 화면으로
     if (!getToken()) window.location.href = '/index.html';
